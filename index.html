@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8" />
+<title>Insetti D3 - Selezione e Scambio</title>
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<style>
+  svg {
+    border: 1px solid #ccc;
+  }
+  .insetto.selected ellipse.body {
+    stroke: red;
+    stroke-width: 3px;
+  }
+  line.leg {
+    stroke: black;
+    stroke-width: 2px;
+  }
+  circle.eye {
+    stroke: black;
+    stroke-width: 1px;
+  }
+
+  .axis path,
+  .axis line {
+    stroke: #000;
+}
+
+</style>
+</head>
+<body>
+
+<script>
+// Dichiarazione iniziale di 'data'. Sarà popolata dal caricamento asincrono.
+// Usiamo 'let' perché verrà riassegnata.
+let data = [];
+
+// --- FUNZIONE PRINCIPALE PER DISEGNARE LA VISUALIZZAZIONE D3 ---
+// Tutto il tuo codice D3 è spostato qui dentro e riceve i dati come argomento.
+function drawVisualization(loadedData) {
+    // Assegna i dati caricati alla variabile 'data' utilizzata nel resto dello script.
+    // Questo è il punto chiave in cui i tuoi dati esterni sostituiscono quelli hardcoded.
+    data = loadedData;
+
+    const width = 1000;
+    const height = 600;            // area principale
+    const legendHeight = 200;      // spazio aggiuntivo per la legenda
+
+    const margin = { top: 20, right: 150 }; // spazio per la legenda sulla destra
+
+    const svg = d3.select("body")
+      .append("svg")
+      .attr("width", width)
+      .attr("height", height + legendHeight);  // totale
+
+    // Scale per posizione
+    const xScale = d3.scaleLinear()
+      .domain(d3.extent(data, d => d.latitude))
+      .range([80, width - 80]);
+
+    const yScale = d3.scaleLinear()
+      .domain(d3.extent(data, d => d.longitude))
+      .range([height - 80, 80]);
+
+    const xAxis = d3.axisBottom(xScale);
+    const yAxis = d3.axisLeft(yScale);
+
+    svg.append("text")
+      .attr("x", width / 2)
+      .attr("y", 30)
+      .attr("text-anchor", "middle")
+      .style("font-size", "24px")
+      .style("font-weight", "bold")
+      .text("Progetto InfoVis - Matteo Vitale");
+
+    svg.append("g")
+      .attr("transform", `translate(0, ${height - 60})`)
+      .call(xAxis);
+
+    svg.append("g")
+      .attr("transform", `translate(60, 0)`)
+      .call(yAxis);
+
+    // Scale per attributi insetto
+    const bodyLengthScale = d3.scaleLinear()
+      .domain(d3.extent(data, d => d.monthlyRevenue))
+      .range([40, 100]);
+
+    const legLengthScale = d3.scaleLinear()
+      .domain(d3.extent(data, d => d.customerFootfall))
+      .range([20, 50]);
+
+    const eyeSizeScale = d3.scaleLinear()
+      .domain(d3.extent(data, d => d.avgBasketSize))
+      .range([5, 15]);
+
+    const colorScale = d3.scaleSequential()
+      .domain(d3.extent(data, d => d.inventoryTurnover))
+      .interpolator(d3.interpolateRainbow);
+
+    // Stato selezione
+    let selected = [];
+
+    // Crea gruppi insetti
+    const insects = svg.selectAll("g.insetto")
+      .data(data)
+      .enter()
+      .append("g")
+      .attr("class", "insetto")
+      .attr("id", d => `insetto-${d.id}`)
+      .attr("transform", d => `translate(${xScale(d.latitude)},${yScale(d.longitude)})`)
+      .style("cursor", "pointer")
+      .on("click", function(event, d) {
+        const g = d3.select(this);
+        const isSelected = g.classed("selected");
+
+        if (isSelected) {
+          g.classed("selected", false);
+          selected = selected.filter(s => s !== d);
+          return;
+        }
+
+        if (selected.length < 2) {
+          g.classed("selected", true);
+          selected.push(d);
+        }
+
+        if (selected.length === 2) {
+          swapData(selected[0], selected[1]);
+          updateInsects();
+          // Deseleziona tutti
+          svg.selectAll("g.insetto").classed("selected", false);
+          selected = [];
+        }
+      });
+
+    // Corpo insetto (ellisse)
+    insects.append("ellipse")
+      .attr("class", "body")
+      .attr("cx", 0)
+      .attr("cy", 0)
+      .attr("rx", d => bodyLengthScale(d.monthlyRevenue) / 2)
+      .attr("ry", 20)
+      .attr("fill", d => colorScale(d.inventoryTurnover))
+      .attr("stroke", "black")
+      .attr("stroke-width", 1);
+
+    // Zampe (3 per lato)
+    insects.each(function(d) {
+      const g = d3.select(this);
+
+      const rx = bodyLengthScale(d.monthlyRevenue) / 2;
+      const ry = 20;
+      const yOffsets = [-15, 0, 15]; // distribuzione verticale delle zampe
+
+      // Angoli delle zampe (più o meno verso l’esterno e un po’ inclinati)
+      // useremo un angolo fisso quasi orizzontale, per esempio 30° verso l’esterno
+      const angle = Math.PI / 6; // 30 gradi in radianti
+
+      yOffsets.forEach((yOffset, i) => {
+        // Zampe sinistre
+        g.append("line")
+          .attr("class", "leg")
+          .attr("x1", -rx)
+          .attr("y1", yOffset)
+          .attr("x2", -rx - legLengthScale(d.customerFootfall) * Math.cos(angle))
+          .attr("y2", yOffset + legLengthScale(d.customerFootfall) * Math.sin(angle));
+        // Zampe destre
+        g.append("line")
+          .attr("class", "leg")
+          .attr("x1", rx)
+          .attr("y1", yOffset)
+          .attr("x2", rx + legLengthScale(d.customerFootfall) * Math.cos(angle))
+          .attr("y2", yOffset + legLengthScale(d.customerFootfall) * Math.sin(angle));
+      });
+    });
+    // Occhi (2 cerchi)
+    insects.append("circle")
+      .attr("class", "eye left-eye")
+      .attr("cx", d => -bodyLengthScale(d.monthlyRevenue) / 4)
+      .attr("cy", -10)
+      .attr("r", d => eyeSizeScale(d.avgBasketSize))
+      .attr("fill", "white")
+      .attr("stroke", "black");
+
+    insects.append("circle")
+      .attr("class", "eye right-eye")
+      .attr("cx", d => bodyLengthScale(d.monthlyRevenue) / 4)
+      .attr("cy", -10)
+      .attr("r", d => eyeSizeScale(d.avgBasketSize))
+      .attr("fill", "white")
+      .attr("stroke", "black");
+
+    // Funzione per scambiare i dati (tranne posizione e id)
+    function swapData(a, b) {
+      const keysToSwap = Object.keys(a).filter(k => !["latitude", "longitude", "id"].includes(k));
+      keysToSwap.forEach(key => {
+        const temp = a[key];
+        a[key] = b[key];
+        b[key] = temp;
+      });
+    }
+
+    // Funzione per aggiornare posizione, dimensioni, colori con animazione fluida
+    function updateInsects() {
+      svg.selectAll("g.insetto")
+        .data(data) // Importante: usa la variabile 'data' aggiornata
+        .transition()
+        .duration(800)
+        .attr("transform", d => `translate(${xScale(d.latitude)},${yScale(d.longitude)})`)
+        .selection() // Torna alla selezione originale per operazioni non in transizione
+        .each(function(d) {
+          const g = d3.select(this);
+          const rx = bodyLengthScale(d.monthlyRevenue) / 2;
+          const ry = 20;
+          const yOffsets = [-15, 0, 15];
+          const angle = Math.PI / 6;
+
+          // Corpo
+          g.select("ellipse.body")
+            .transition()
+            .duration(800)
+            .attr("rx", rx)
+            .attr("ry", ry)
+            .attr("fill", colorScale(d.inventoryTurnover));
+
+          // Occhi
+          g.select("circle.left-eye")
+            .transition()
+            .duration(800)
+            .attr("cx", -rx / 2)
+            .attr("r", eyeSizeScale(d.avgBasketSize));
+
+          g.select("circle.right-eye")
+            .transition()
+            .duration(800)
+            .attr("cx", rx / 2)
+            .attr("r", eyeSizeScale(d.avgBasketSize));
+
+          // Zampe
+          const legsData = d3.range(6);
+          const legs = g.selectAll("line.leg")
+            .data(legsData, i => i);
+
+          legs.enter()
+            .append("line")
+            .attr("class", "leg")
+            .merge(legs)
+            .transition()
+            .duration(800)
+            .attr("x1", (i) => i < 3 ? -rx : rx)
+            .attr("y1", (i) => yOffsets[i % 3])
+            .attr("x2", (i) => {
+              const legLength = legLengthScale(d.customerFootfall);
+              return i < 3
+                ? -rx - legLength * Math.cos(angle)
+                : rx + legLength * Math.cos(angle);
+            })
+            .attr("y2", (i) => {
+              const legLength = legLengthScale(d.customerFootfall);
+              return yOffsets[i % 3] + legLength * Math.sin(angle);
+            });
+
+          legs.exit().remove();
+        });
+    }
+
+    const legendData = [
+      { label: "Corpo - Ricavi mensili", symbol: "ellipse", color: "gray" },
+      { label: "Colore corpo - Rotazione magazzino", symbol: "rect", color: colorScale(0.5) },
+      { label: "Occhi - Dimensione media carrello", symbol: "circle", color: "black" },
+      { label: "Zampe - Affluenza clienti", symbol: "line", color: "black" },
+      { label: "Posizione - Coordinate geografiche", symbol: "point", color: "black" }
+    ];
+
+    const legenda = svg.append("g")
+      .attr("class", "legend")
+      .attr("transform", `translate(60, ${height + 20})`); // Posiziona sotto il grafico
+
+    const legendSpacing = 25;
+
+    legendData.forEach((item, i) => {
+      const group = legenda.append("g")
+        .attr("transform", `translate(0, ${i * legendSpacing})`);
+
+      if (item.symbol === "ellipse") {
+        group.append("ellipse")
+          .attr("cx", 0)
+          .attr("cy", 10)
+          .attr("rx", 10)
+          .attr("ry", 6)
+          .attr("fill", item.color)
+          .attr("stroke", "black");
+      } else if (item.symbol === "rect") {
+        group.append("rect")
+          .attr("x", -10)
+          .attr("y", 2)
+          .attr("width", 20)
+          .attr("height", 15)
+          .attr("fill", item.color)
+          .attr("stroke", "black");
+      } else if (item.symbol === "circle") {
+        group.append("circle")
+          .attr("cx", 0)
+          .attr("cy", 10)
+          .attr("r", 5)
+          .attr("fill", "white")
+          .attr("stroke", item.color);
+      } else if (item.symbol === "line") {
+        group.append("line")
+          .attr("x1", -10)
+          .attr("y1", 10)
+          .attr("x2", 10)
+          .attr("y2", 10)
+          .attr("stroke", item.color)
+          .attr("stroke-width", 2);
+      } else if (item.symbol === "point") {
+        group.append("circle")
+          .attr("cx", 0)
+          .attr("cy", 10)
+          .attr("r", 3)
+          .attr("fill", item.color);
+      }
+
+      group.append("text")
+        .attr("x", 20)
+        .attr("y", 15)
+        .text(item.label)
+        .style("font-size", "14px");
+    });
+} // Fine della funzione drawVisualization
+
+
+// --- CARICAMENTO DEI DATI E AVVIO DELLA VISUALIZZAZIONE ---
+fetch('data.json') // Percorso al tuo file JSON
+    .then(response => {
+        if (!response.ok) {
+            throw new Error(`Errore HTTP! Stato: ${response.status}`);
+        }
+        return response.json();
+    })
+    .then(jsonData => {
+        // Una volta che i dati sono caricati, chiama la funzione principale
+        // passando i dati ottenuti
+        drawVisualization(jsonData);
+    })
+    .catch(error => {
+        console.error("Errore durante il caricamento del file JSON:", error);
+        // Puoi aggiungere un messaggio di errore visibile all'utente qui
+        d3.select("body").append("p")
+          .style("color", "red")
+          .text("Impossibile caricare i dati: " + error.message + ". Assicurati che 'data.json' sia presente e il server sia avviato.");
+    });
+
+</script>
+
+</body>
+</html>
